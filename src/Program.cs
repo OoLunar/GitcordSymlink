@@ -1,21 +1,12 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Threading.Tasks;
-using DSharpPlus;
-using DSharpPlus.Commands;
-using DSharpPlus.Commands.Processors.SlashCommands;
-using DSharpPlus.Commands.Processors.TextCommands;
-using DSharpPlus.Commands.Processors.TextCommands.Parsing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using OoLunar.GitHubForumWebhookWorker.Configuration;
-using OoLunar.GitHubForumWebhookWorker.Events;
 using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
-using DSharpPlusDiscordConfiguration = DSharpPlus.DiscordConfiguration;
 using SerilogLoggerConfiguration = Serilog.LoggerConfiguration;
 
 namespace OoLunar.GitHubForumWebhookWorker
@@ -79,66 +70,9 @@ namespace OoLunar.GitHubForumWebhookWorker
                 logging.AddSerilog(serilogLoggerConfiguration.CreateLogger());
             });
 
-            services.AddSingleton((serviceProvider) =>
-            {
-                DiscordEventManager eventManager = new(serviceProvider);
-                eventManager.GatherEventHandlers(typeof(Program).Assembly);
-                return eventManager;
-            });
-
-            services.AddSingleton(serviceProvider =>
-            {
-                GitHubForumWebhookWorkerConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitHubForumWebhookWorkerConfiguration>();
-                if (gitHubForumWebhookWorker.Discord is null || string.IsNullOrWhiteSpace(gitHubForumWebhookWorker.Discord.Token))
-                {
-                    serviceProvider.GetRequiredService<ILogger<Program>>().LogCritical("Discord token is not set! Exiting...");
-                    Environment.Exit(1);
-                }
-
-                DiscordShardedClient discordClient = new(new DSharpPlusDiscordConfiguration
-                {
-                    Token = gitHubForumWebhookWorker.Discord.Token,
-                    Intents = TextCommandProcessor.RequiredIntents | SlashCommandProcessor.RequiredIntents | DiscordIntents.GuildVoiceStates | DiscordIntents.MessageContents,
-                    LoggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>(),
-                });
-
-                return discordClient;
-            });
-
             // Almost start the program
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             GitHubForumWebhookWorkerConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitHubForumWebhookWorkerConfiguration>();
-            DiscordShardedClient discordClient = serviceProvider.GetRequiredService<DiscordShardedClient>();
-            DiscordEventManager eventManager = serviceProvider.GetRequiredService<DiscordEventManager>();
-
-            // Register extensions here since these involve asynchronous operations
-            IReadOnlyDictionary<int, CommandsExtension> commandsExtensions = await discordClient.UseCommandsAsync(new CommandsConfiguration()
-            {
-                ServiceProvider = serviceProvider,
-                DebugGuildId = gitHubForumWebhookWorker.Discord.GuildId
-            });
-
-            // Iterate through each Discord shard
-            foreach (CommandsExtension commandsExtension in commandsExtensions.Values)
-            {
-                // Add all commands by scanning the current assembly
-                commandsExtension.AddCommands(typeof(Program).Assembly);
-
-                // Add text commands (h!ping) with a custom prefix, keeping all the other processors in their default state
-                await commandsExtension.AddProcessorsAsync(new TextCommandProcessor(new()
-                {
-                    PrefixResolver = new DefaultPrefixResolver(gitHubForumWebhookWorker.Discord.Prefix).ResolvePrefixAsync
-                }));
-
-                // Register event handlers for the commands extension
-                eventManager.RegisterEventHandlers(commandsExtension);
-            }
-
-            // Register event handlers for the main Discord client
-            eventManager.RegisterEventHandlers(discordClient);
-
-            // Connect to Discord
-            await discordClient.StartAsync();
 
             // Wait for commands
             await Task.Delay(-1);
