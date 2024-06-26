@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  githubforumwebhookworker:
+    build: .
+    #image: ghcr.io/oolunar/githubforumwebhookworker:latest
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./logs:/src/logs
