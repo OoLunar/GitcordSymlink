@@ -1,9 +1,13 @@
 using System;
 using System.Globalization;
+using System.Net.Http;
 using System.Threading.Tasks;
+using HyperSharp;
+using HyperSharp.Setup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OoLunar.GitHubForumWebhookWorker.Configuration;
+using Remora.Discord.API.Extensions;
 using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -70,9 +74,28 @@ namespace OoLunar.GitHubForumWebhookWorker
                 logging.AddSerilog(serilogLoggerConfiguration.CreateLogger());
             });
 
+            // Add our http client
+            services.AddSingleton((serviceProvider) =>
+            {
+                HttpClient httpClient = new();
+                httpClient.DefaultRequestHeaders.Add("User-Agent", $"OoLunar.GitHubForumWebhookWorker/{ThisAssembly.Project.Version} ({ThisAssembly.Project.RepositoryUrl})");
+                return httpClient;
+            });
+
+            services.AddSingleton<DiscordWebhookManager>();
+
+            // Add Remora.Discord json serialization options
+            services.AddOptions();
+            services.ConfigureDiscordJsonConverters("HyperSharp");
+
+            // Add our http server
+            services.AddHyperSharp((config) => config.AddResponders(typeof(Program).Assembly));
+
             // Almost start the program
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             GitHubForumWebhookWorkerConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitHubForumWebhookWorkerConfiguration>();
+            HyperServer server = serviceProvider.GetRequiredService<HyperServer>();
+            server.Start();
 
             // Wait for commands
             await Task.Delay(-1);

@@ -1,0 +1,10 @@
+﻿<Project Sdk="MSTest.Sdk/3.3.1">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(ProjectRoot)/src/GitHubForumWebhookWorker.csproj" />
+  </ItemGroup>
+</Project>
