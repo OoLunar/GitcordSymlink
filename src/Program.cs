@@ -7,6 +7,7 @@ using HyperSharp.Setup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OoLunar.GitHubForumWebhookWorker.Configuration;
+using OoLunar.GitHubForumWebhookWorker.Discord;
 using Remora.Discord.API.Extensions;
 using Serilog;
 using Serilog.Events;

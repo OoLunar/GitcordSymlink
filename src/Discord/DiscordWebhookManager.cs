@@ -7,7 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using OoLunar.GitHubForumWebhookWorker.Configuration;
 
-namespace OoLunar.GitHubForumWebhookWorker
+namespace OoLunar.GitHubForumWebhookWorker.Discord
 {
     public sealed class DiscordWebhookManager : IDisposable
     {
@@ -24,6 +24,8 @@ namespace OoLunar.GitHubForumWebhookWorker
         /// </summary>
         private readonly SqliteCommand _createRepositoryTableCommand;
 
+        private readonly SqliteCommand _createNewAccountCommand;
+        private readonly SqliteCommand _createNewRepositoryCommand;
         private readonly SqliteCommand _getWebhookCommand;
         private readonly SqliteCommand _getPostIdCommand;
 
@@ -54,6 +56,20 @@ namespace OoLunar.GitHubForumWebhookWorker
             _createRepositoryTableCommand = _connection.CreateCommand();
             _createRepositoryTableCommand.CommandText = @"CREATE TABLE IF NOT EXISTS Repository (Account TEXT, Name TEXT, ThreadId INTEGER NOT NULL)";
             _createRepositoryTableCommand.ExecuteNonQuery();
+
+            _createNewAccountCommand = _connection.CreateCommand();
+            _createNewAccountCommand.CommandText = "INSERT INTO Account (Name, ChannelId, WebhookUrl) VALUES (@Name, @ChannelId, @WebhookUrl)";
+            _createNewAccountCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
+            _createNewAccountCommand.Parameters.Add(new SqliteParameter("@ChannelId", DbType.Int64));
+            _createNewAccountCommand.Parameters.Add(new SqliteParameter("@WebhookUrl", DbType.String));
+            _createNewAccountCommand.Prepare();
+
+            _createNewRepositoryCommand = _connection.CreateCommand();
+            _createNewRepositoryCommand.CommandText = "INSERT INTO Repository (Account, Name, ThreadId) VALUES (@Account, @Name, @ThreadId)";
+            _createNewRepositoryCommand.Parameters.Add(new SqliteParameter("@Account", DbType.String));
+            _createNewRepositoryCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
+            _createNewRepositoryCommand.Parameters.Add(new SqliteParameter("@ThreadId", DbType.Int64));
+            _createNewRepositoryCommand.Prepare();
 
             _getWebhookCommand = _connection.CreateCommand();
             _getWebhookCommand.CommandText = "SELECT WebhookUrl FROM Account WHERE Name = @Name";
@@ -90,6 +106,12 @@ namespace OoLunar.GitHubForumWebhookWorker
                     _createRepositoryTableCommand.Connection = _connection;
                     _createRepositoryTableCommand.ExecuteNonQuery();
 
+                    _createNewAccountCommand.Connection = _connection;
+                    _createNewAccountCommand.Prepare();
+
+                    _createNewRepositoryCommand.Connection = _connection;
+                    _createNewRepositoryCommand.Prepare();
+
                     _getWebhookCommand.Connection = _connection;
                     _getWebhookCommand.Prepare();
 
@@ -104,6 +126,38 @@ namespace OoLunar.GitHubForumWebhookWorker
             }
 
             _commandLock.Release();
+        }
+
+        public async ValueTask CreateNewAccountAsync(string accountName, ulong channelId, string? webhookUrl = null, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await _commandLock.WaitAsync(cancellationToken);
+                _createNewAccountCommand.Parameters["@Name"].Value = accountName;
+                _createNewAccountCommand.Parameters["@ChannelId"].Value = channelId;
+                _createNewAccountCommand.Parameters["@WebhookUrl"].Value = webhookUrl;
+                await _createNewAccountCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
+        public async ValueTask CreateNewRepositoryAsync(string accountName, string repositoryName, ulong threadId, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await _commandLock.WaitAsync(cancellationToken);
+                _createNewRepositoryCommand.Parameters["@Account"].Value = accountName;
+                _createNewRepositoryCommand.Parameters["@Name"].Value = repositoryName;
+                _createNewRepositoryCommand.Parameters["@ThreadId"].Value = threadId;
+                await _createNewRepositoryCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
         }
 
         public async ValueTask<string?> GetWebhookUrlAsync(string accountName, CancellationToken cancellationToken = default)
@@ -143,6 +197,8 @@ namespace OoLunar.GitHubForumWebhookWorker
             _connection.Dispose();
             _createAccountTableCommand.Dispose();
             _createRepositoryTableCommand.Dispose();
+            _createNewAccountCommand.Dispose();
+            _createNewRepositoryCommand.Dispose();
             _getWebhookCommand.Dispose();
             _getPostIdCommand.Dispose();
             _commandLock.Dispose();

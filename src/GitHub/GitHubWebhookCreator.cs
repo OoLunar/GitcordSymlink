@@ -1,4 +1,4 @@
-namespace OoLunar.GitHubForumWebhookWorker
+namespace OoLunar.GitHubForumWebhookWorker.GitHub
 {
     public sealed class GitHubWebhookCreator
     {

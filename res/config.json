@@ -2,9 +2,7 @@
     "discord": {
         "debug_guild_id": "",
         "token": "",
-        "prefixes": [
-            ">>"
-        ]
+        "public_key": ""
     },
     "logging": {
         "level": "Debug",
