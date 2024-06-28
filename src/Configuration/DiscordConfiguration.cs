@@ -4,6 +4,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Configuration
     {
         public required string Token { get; init; }
         public required string PublicKey { get; init; }
+        public required ulong ApplicationId { get; init; }
         public required ulong GuildId { get; init; }
     }
 }

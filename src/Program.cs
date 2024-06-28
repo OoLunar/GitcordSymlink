@@ -84,6 +84,7 @@ namespace OoLunar.GitHubForumWebhookWorker
             });
 
             services.AddSingleton<DiscordWebhookManager>();
+            services.AddSingleton<DiscordCommandHandler>();
 
             // Add Remora.Discord json serialization options
             services.AddOptions();
@@ -95,6 +96,12 @@ namespace OoLunar.GitHubForumWebhookWorker
             // Almost start the program
             IServiceProvider serviceProvider = services.BuildServiceProvider();
             GitHubForumWebhookWorkerConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitHubForumWebhookWorkerConfiguration>();
+
+            // Register commands
+            DiscordCommandHandler commandHandler = serviceProvider.GetRequiredService<DiscordCommandHandler>();
+            await commandHandler.RegisterCommandsAsync();
+
+            // Start the server
             HyperServer server = serviceProvider.GetRequiredService<HyperServer>();
             server.Start();
 
