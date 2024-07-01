@@ -9,19 +9,28 @@ using System.Threading.Tasks;
 using HyperSharp.Protocol;
 using HyperSharp.Responders;
 using HyperSharp.Results;
+using OoLunar.GitHubForumWebhookWorker.Configuration;
 
 namespace OoLunar.GitHubForumWebhookWorker.GitHub
 {
     public sealed class GitHubVerifier : IValueTaskResponder<HyperContext, HyperStatus>
     {
         public static Type[] Needs => [];
+        private readonly GitHubConfiguration _configuration;
+        private readonly byte[] _webhookSecretBytes;
+
+        public GitHubVerifier(GitHubForumWebhookWorkerConfiguration configuration)
+        {
+            _configuration = configuration.GitHub;
+            _webhookSecretBytes = Encoding.UTF8.GetBytes(_configuration.WebhookSecret);
+        }
 
         public async ValueTask<Result<HyperStatus>> RespondAsync(HyperContext context, CancellationToken cancellationToken = default)
         {
-            if (!context.Route.AbsolutePath.StartsWith("/github/", StringComparison.OrdinalIgnoreCase))
+            if (!context.Route.AbsolutePath.StartsWith("/github", StringComparison.OrdinalIgnoreCase))
             {
-                // Skip this responder if the route doesn't start with /github/
-                return Result.Success<HyperStatus>();
+                // Skip this responder if the route doesn't start with /github
+                return Result.Failure<HyperStatus>();
             }
             else if (!context.Headers.TryGetValue("Content-Length", out string? contentLengthString))
             {
@@ -65,15 +74,8 @@ namespace OoLunar.GitHubForumWebhookWorker.GitHub
                 {
                     return Result.Success<HyperStatus>();
                 }
-
-                // The secret key will be the first (and only) segment of the route
-                string[] segments = context.Route.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                if (segments.Length != 2)
-                {
-                    return HyperStatus.Unauthorized(new Error("Missing secret key."));
-                }
                 // Verify the signature
-                else if (!TryVerifySignature(bodyBuffer.AsSpan(0, bytesRead), Encoding.UTF8.GetBytes(segments[1]), signature))
+                else if (!TryVerifySignature(bodyBuffer.AsSpan(0, bytesRead), _webhookSecretBytes, signature))
                 {
                     return HyperStatus.Unauthorized(new Error("Invalid signature."));
                 }

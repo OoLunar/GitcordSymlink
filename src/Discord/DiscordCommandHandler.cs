@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
-using System.Net.Http.Json;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +11,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OneOf;
-using OoLunar.GitHubForumWebhookWorker.Configuration;
 using OoLunar.GitHubForumWebhookWorker.Discord.Commands;
 using Remora.Commands.Trees;
 using Remora.Commands.Trees.Nodes;
@@ -28,19 +26,17 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
         public static Type[] Needs => [typeof(DiscordVerifier)];
         private static Dictionary<Snowflake, string> _commandMappings = [];
 
-        private readonly DiscordConfiguration _configuration;
+        private readonly DiscordApiRoutes _apiRoutes;
         private readonly ILogger<DiscordCommandHandler> _logger;
-        private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonSerializerOptions;
 
         // Command objects
         private readonly SyncAccountCommand _syncAccountCommand;
 
-        public DiscordCommandHandler(IServiceProvider serviceProvider, GitHubForumWebhookWorkerConfiguration configuration, ILogger<DiscordCommandHandler> logger, HttpClient httpClient, IOptionsSnapshot<JsonSerializerOptions> jsonSerializerOptions)
+        public DiscordCommandHandler(IServiceProvider serviceProvider, DiscordApiRoutes apiRoutes, ILogger<DiscordCommandHandler> logger, IOptionsSnapshot<JsonSerializerOptions> jsonSerializerOptions)
         {
-            _configuration = configuration.Discord;
+            _apiRoutes = apiRoutes;
             _logger = logger;
-            _httpClient = httpClient;
             _jsonSerializerOptions = jsonSerializerOptions.Get("HyperSharp");
 
             _syncAccountCommand = ActivatorUtilities.GetServiceOrCreateInstance<SyncAccountCommand>(serviceProvider);
@@ -62,30 +58,23 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
 
             // Build the commands
             CommandTree commandTree = commandTreeBuilder.Build();
-            IReadOnlyList<IBulkApplicationCommandData> applicationCommandData = commandTree.CreateApplicationCommands();
 
             // Register all commands
-            HttpRequestMessage request = new(HttpMethod.Put, $"https://discord.com/api/v10/applications/{_configuration.ApplicationId}/commands");
-            request.Headers.Add("Authorization", $"Bot {_configuration.Token}");
-            request.Content = JsonContent.Create(applicationCommandData, options: _jsonSerializerOptions);
-
-            HttpResponseMessage response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+            DiscordApiResult<IReadOnlyList<IApplicationCommand>> discordCommands = await _apiRoutes.RegisterApplicationCommandsAsync(commandTree.CreateApplicationCommands());
+            if (discordCommands.Value is null)
             {
-                _logger.LogCritical("Failed to register commands: {StatusCode} {ReasonPhrase}, {Body}", (int)response.StatusCode, response.ReasonPhrase, await response.Content.ReadAsStringAsync());
+                _logger.LogCritical("Failed to register commands: {StatusCode} {ReasonPhrase}, {Body}", (int)discordCommands.StatusCode, discordCommands.StatusCode, discordCommands.Error);
                 return;
             }
-
-            IReadOnlyList<IApplicationCommand>? applicationCommands = await response.Content.ReadFromJsonAsync<IReadOnlyList<IApplicationCommand>>(_jsonSerializerOptions);
-            if (applicationCommands is null)
+            else if (discordCommands.Value is null)
             {
-                _logger.LogError("Failed to read commands from response.");
+                _logger.LogCritical("Failed to read commands from response.");
                 return;
             }
 
             // Map command id's back to command names
             Dictionary<Snowflake, string> commandMappings = [];
-            foreach (KeyValuePair<(Optional<Snowflake> GuildID, Snowflake CommandID), OneOf<IReadOnlyDictionary<string, CommandNode>, CommandNode>> commandList in commandTree.MapDiscordCommands(applicationCommands))
+            foreach (KeyValuePair<(Optional<Snowflake> GuildID, Snowflake CommandID), OneOf<IReadOnlyDictionary<string, CommandNode>, CommandNode>> commandList in commandTree.MapDiscordCommands(discordCommands.Value))
             {
                 // For now we're only going to support global commands, ignoring guild commands
                 // Additionally we're only going to support commands with a single node, ignoring group commands
@@ -125,7 +114,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             ? Result.Failure<InteractionResponse>($"No handler found for command ID: {interaction.Data.Value.AsT0.ID} ({interaction.Data.Value.AsT0.Name})")
             : commandName switch
             {
-                "sync_account" => ConvertRemoraResultToHyperSharp(await _syncAccountCommand.ExecuteAsync(interaction.Data.Value.AsT0.Options.Value[0].Value.Value.AsT0)),
+                "sync_account" => ConvertRemoraResultToHyperSharp(await _syncAccountCommand.ExecuteAsync(interaction.Data.Value.AsT0.Options.Value[0].Value.Value.AsT0, interaction.Data.Value.AsT0.Resolved.Value.Channels.Value.First().Value)),
                 _ => Result.Failure<InteractionResponse>($"No handler found for command: {commandName}"),
             };
 

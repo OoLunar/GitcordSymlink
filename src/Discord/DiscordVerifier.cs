@@ -22,7 +22,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
         {
             if (!context.Route.AbsolutePath.StartsWith("/discord", StringComparison.OrdinalIgnoreCase))
             {
-                return Result.Success<HyperStatus>();
+                return Result.Failure<HyperStatus>();
             }
 
             if (!context.Headers.TryGetValue("Content-Length", out string? contentLengthString) || !int.TryParse(contentLengthString, out int contentLength))

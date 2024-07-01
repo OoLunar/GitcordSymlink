@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using OneOf;
 using Remora.Commands.Attributes;
 using Remora.Commands.Groups;
@@ -12,10 +13,48 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord.Commands
 {
     public sealed class SyncAccountCommand : CommandGroup
     {
+        private readonly ILogger<SyncAccountCommand> _logger;
+        private readonly DatabaseManager _discordWebhookManager;
+        private readonly DiscordApiRoutes _apiRoutes;
+
+        public SyncAccountCommand(ILogger<SyncAccountCommand> logger, DatabaseManager discordWebhookManager, DiscordApiRoutes apiRoutes)
+        {
+            _logger = logger;
+            _discordWebhookManager = discordWebhookManager;
+            _apiRoutes = apiRoutes;
+        }
+
         [Command("sync_account"), Description("Syncs a GitHub account or organization with a Discord channel.")]
-        public ValueTask<Result<InteractionResponse>> ExecuteAsync(string accountName) => ValueTask.FromResult(Result<InteractionResponse>.FromSuccess(new InteractionResponse(InteractionCallbackType.ChannelMessageWithSource, new Optional<OneOf<IInteractionMessageCallbackData, IInteractionAutocompleteCallbackData, IInteractionModalCallbackData>>(new InteractionMessageCallbackData(
-            Content: "This command is not yet implemented.",
-            Flags: MessageFlags.Ephemeral
-        )))));
+        public async ValueTask<Result<InteractionResponse>> ExecuteAsync(string accountName, IPartialChannel? channel = null)
+        {
+            if (channel is null)
+            {
+                // TODO: Create channel automatically if it doesn't exist.
+                return Result<InteractionResponse>.FromSuccess(new InteractionResponse(InteractionCallbackType.ChannelMessageWithSource, new Optional<OneOf<IInteractionMessageCallbackData, IInteractionAutocompleteCallbackData, IInteractionModalCallbackData>>(new InteractionMessageCallbackData(
+                    Content: "Please specify a channel to sync the account with.",
+                    Flags: MessageFlags.Ephemeral
+                ))));
+            }
+
+            // Create a new webhook for the channel.
+            DiscordApiResult<Webhook> webhook = await _apiRoutes.CreateWebhookAsync(channel);
+            if (webhook.Value is null)
+            {
+                _logger.LogError("Failed to create a webhook for the channel: {HttpStatusCode} {HttpStatusReason} {Error}", (int)webhook.StatusCode, webhook.StatusCode, webhook.Error);
+                return Result<InteractionResponse>.FromSuccess(new InteractionResponse(InteractionCallbackType.ChannelMessageWithSource, new Optional<OneOf<IInteractionMessageCallbackData, IInteractionAutocompleteCallbackData, IInteractionModalCallbackData>>(new InteractionMessageCallbackData(
+                    Content: "Failed to create a webhook for the channel.",
+                    Flags: MessageFlags.Ephemeral
+                ))));
+            }
+
+            // Store the webhook URL in the database.
+            await _discordWebhookManager.CreateNewAccountAsync(accountName, channel.ID.Value.Value, $"{webhook.Value.URL.Value}/github");
+
+            // Let the user sync the account with the webhook.
+            return Result<InteractionResponse>.FromSuccess(new InteractionResponse(InteractionCallbackType.ChannelMessageWithSource, new Optional<OneOf<IInteractionMessageCallbackData, IInteractionAutocompleteCallbackData, IInteractionModalCallbackData>>(new InteractionMessageCallbackData(
+                Content: "Please give me permission to add webhooks to your repositories: https://github.com/apps/gitcord-symlink/installations/new",
+                Flags: MessageFlags.Ephemeral
+            ))));
+        }
     }
 }

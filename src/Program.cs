@@ -75,23 +75,36 @@ namespace OoLunar.GitHubForumWebhookWorker
                 logging.AddSerilog(serilogLoggerConfiguration.CreateLogger());
             });
 
+            // Add our ratelimiter
+            services.AddTransient<HttpRatelimiter>();
+
             // Add our http client
-            services.AddSingleton((serviceProvider) =>
+            services.AddTransient((serviceProvider) =>
             {
-                HttpClient httpClient = new();
+                HttpClient httpClient = new(serviceProvider.GetRequiredService<HttpRatelimiter>())
+                {
+                    DefaultRequestVersion = new Version(2, 0),
+                    Timeout = TimeSpan.FromHours(1)
+                };
+
                 httpClient.DefaultRequestHeaders.Add("User-Agent", $"OoLunar.GitHubForumWebhookWorker/{ThisAssembly.Project.Version} ({ThisAssembly.Project.RepositoryUrl})");
                 return httpClient;
             });
 
-            services.AddSingleton<DiscordWebhookManager>();
+            services.AddSingleton<DatabaseManager>();
             services.AddSingleton<DiscordCommandHandler>();
+            services.AddSingleton<DiscordApiRoutes>();
 
             // Add Remora.Discord json serialization options
             services.AddOptions();
             services.ConfigureDiscordJsonConverters("HyperSharp");
 
             // Add our http server
-            services.AddHyperSharp((config) => config.AddResponders(typeof(Program).Assembly));
+            services.AddHyperSharp((config) =>
+            {
+                config.Timeout = TimeSpan.FromHours(1);
+                config.AddResponders(typeof(Program).Assembly);
+            });
 
             // Almost start the program
             IServiceProvider serviceProvider = services.BuildServiceProvider();

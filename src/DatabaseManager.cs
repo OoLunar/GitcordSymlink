@@ -1,17 +1,17 @@
 using System;
 using System.Data;
-using System.Runtime.CompilerServices;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using OoLunar.GitHubForumWebhookWorker.Configuration;
 
-namespace OoLunar.GitHubForumWebhookWorker.Discord
+namespace OoLunar.GitHubForumWebhookWorker
 {
-    public sealed class DiscordWebhookManager : IDisposable
+    public sealed class DatabaseManager : IDisposable
     {
-        private readonly ILogger<DiscordWebhookManager> _logger;
+        private readonly ILogger<DatabaseManager> _logger;
         private readonly SqliteConnection _connection;
 
         /// <summary>
@@ -26,6 +26,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
 
         private readonly SqliteCommand _createNewAccountCommand;
         private readonly SqliteCommand _createNewRepositoryCommand;
+        private readonly SqliteCommand _getAccountCommand;
         private readonly SqliteCommand _getWebhookCommand;
         private readonly SqliteCommand _getPostIdCommand;
 
@@ -34,7 +35,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
         /// </summary>
         private readonly SemaphoreSlim _commandLock = new(0, 1);
 
-        public DiscordWebhookManager(GitHubForumWebhookWorkerConfiguration configuration, ILogger<DiscordWebhookManager> logger)
+        public DatabaseManager(GitHubForumWebhookWorkerConfiguration configuration, ILogger<DatabaseManager> logger)
         {
             _logger = logger;
 
@@ -70,6 +71,11 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             _createNewRepositoryCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
             _createNewRepositoryCommand.Parameters.Add(new SqliteParameter("@ThreadId", DbType.Int64));
             _createNewRepositoryCommand.Prepare();
+
+            _getAccountCommand = _connection.CreateCommand();
+            _getAccountCommand.CommandText = "SELECT ChannelId, WebhookUrl FROM Account WHERE Name = @Name";
+            _getAccountCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
+            _getAccountCommand.Prepare();
 
             _getWebhookCommand = _connection.CreateCommand();
             _getWebhookCommand.CommandText = "SELECT WebhookUrl FROM Account WHERE Name = @Name";
@@ -160,6 +166,21 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             }
         }
 
+        public async ValueTask<(ulong ChannelId, string? WebhookUrl)> GetAccountAsync(string accountName, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await _commandLock.WaitAsync(cancellationToken);
+                _getAccountCommand.Parameters["@Name"].Value = accountName;
+                using SqliteDataReader reader = await _getAccountCommand.ExecuteReaderAsync(cancellationToken);
+                return reader.Read() ? (Convert.ToUInt64(reader.GetInt64(0)), reader.GetString(1)) : (0, null);
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
         public async ValueTask<string?> GetWebhookUrlAsync(string accountName, CancellationToken cancellationToken = default)
         {
             try
@@ -181,8 +202,8 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
                 await _commandLock.WaitAsync(cancellationToken);
                 _getPostIdCommand.Parameters["@Account"].Value = accountName;
                 _getPostIdCommand.Parameters["@Name"].Value = repositoryName;
-                long value = (long)(await _getPostIdCommand.ExecuteScalarAsync(cancellationToken) ?? 0);
-                return value is 0 ? null : Unsafe.As<long, ulong>(ref value);
+                object? value = await _getPostIdCommand.ExecuteScalarAsync(cancellationToken);
+                return value is null ? null : Convert.ToUInt64(value, CultureInfo.InvariantCulture);
             }
             finally
             {
