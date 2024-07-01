@@ -37,7 +37,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord.Commands
             }
 
             // Create a new webhook for the channel.
-            DiscordApiResult<Webhook> webhook = await _apiRoutes.CreateWebhookAsync(channel);
+            DiscordApiResult<Webhook> webhook = await _apiRoutes.CreateWebhookAsync(channel, $"Creating GitHub webhook for {PluralizeCorrectly(accountName)} GitHub account.");
             if (webhook.Value is null)
             {
                 _logger.LogError("Failed to create a webhook for the channel: {HttpStatusCode} {HttpStatusReason} {Error}", (int)webhook.StatusCode, webhook.StatusCode, webhook.Error);
@@ -56,5 +56,14 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord.Commands
                 Flags: MessageFlags.Ephemeral
             ))));
         }
+
+        public static string PluralizeCorrectly(string str) => str.Length == 0 ? str : str[^1] switch
+        {
+            // Ensure it doesn't already end with `'s`
+            's' when str.Length > 1 && str[^2] == '\'' => str,
+            's' => str + '\'',
+            '\'' => str + 's',
+            _ => str + "'s"
+        };
     }
 }

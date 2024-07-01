@@ -53,10 +53,11 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             };
         }
 
-        public async ValueTask<DiscordApiResult<Channel>> CreateThreadChannelAsync(ulong channelId, string fullName, string repositoryUrl)
+        public async ValueTask<DiscordApiResult<Channel>> CreateThreadChannelAsync(ulong channelId, string fullName)
         {
             HttpRequestMessage request = new(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channelId}/threads");
             request.Headers.Add("Authorization", $"Bot {_configuration.Token}");
+            request.Headers.Add("X-Audit-Log-Reason", $"Creating project channel for GitHub project '{fullName}'.");
             request.Content = JsonContent.Create(
                 inputValue: new
                 {
@@ -67,7 +68,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
                         {
                             new() {
                                 Colour = ColorTranslator.FromHtml("#6b73db"),
-                                Description = $"Linking [`{fullName}`]({repositoryUrl}) from GitHub to Discord..."
+                                Description = $"Linking [`{fullName}`](https://github.com/{fullName}) from GitHub to Discord..."
                             }
                         }
                     }
@@ -84,19 +85,18 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             };
         }
 
-        public async ValueTask<DiscordApiResult<Webhook>> CreateWebhookAsync(IPartialChannel channel)
+        public async ValueTask<DiscordApiResult<Webhook>> CreateWebhookAsync(IPartialChannel channel, string auditLogReason)
         {
-            HttpRequestMessage requestMessage = new(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channel.ID}/webhooks")
-            {
-                Headers = { { "Authorization", $"Bot {_configuration.Token}" } },
-                Content = JsonContent.Create(
-                    inputValue: new
-                    {
-                        name = "Symlink Gitcord"
-                    },
-                    options: _jsonSerializerOptions
-                )
-            };
+            HttpRequestMessage requestMessage = new(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channel.ID}/webhooks");
+            requestMessage.Headers.Add("Authorization", $"Bot {_configuration.Token}");
+            requestMessage.Headers.Add("X-Audit-Log-Reason", auditLogReason);
+            requestMessage.Content = JsonContent.Create(
+                inputValue: new
+                {
+                    name = "Symlink Gitcord"
+                },
+                options: _jsonSerializerOptions
+            );
 
             HttpResponseMessage response = await _httpClient.SendAsync(requestMessage);
             return new DiscordApiResult<Webhook>()

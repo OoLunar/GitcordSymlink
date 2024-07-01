@@ -124,7 +124,7 @@ namespace OoLunar.GitHubForumWebhookWorker.GitHub
                 }
 
                 // Create a new post
-                DiscordApiResult<Channel> newThread = await _discordApiRoutes.CreateThreadChannelAsync(channelId, repository.FullName, $"https://github.com/{repository.FullName}");
+                DiscordApiResult<Channel> newThread = await _discordApiRoutes.CreateThreadChannelAsync(channelId, repository.FullName);
                 if (newThread.Value is null)
                 {
                     _logger.LogError("Failed to create thread channel: {StatusCode} {Error}", newThread.StatusCode, newThread.Error);
