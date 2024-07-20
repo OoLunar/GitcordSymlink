@@ -5,11 +5,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
-using OoLunar.GitHubForumWebhookWorker.Configuration;
+using OoLunar.GitcordSymlink.Configuration;
 using Remora.Discord.API.Abstractions.Objects;
 using Remora.Discord.API.Objects;
 
-namespace OoLunar.GitHubForumWebhookWorker.Discord
+namespace OoLunar.GitcordSymlink.Discord
 {
     public sealed class DiscordApiRoutes
     {
@@ -17,21 +17,21 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonSerializerOptions;
 
-        public DiscordApiRoutes(GitHubForumWebhookWorkerConfiguration configuration, HttpClient httpClient, IOptionsSnapshot<JsonSerializerOptions> jsonSerializerOptions)
+        public DiscordApiRoutes(GitcordSymlinkConfiguration configuration, HttpClient httpClient, IOptionsSnapshot<JsonSerializerOptions> jsonSerializerOptions)
         {
             _configuration = configuration.Discord;
             _httpClient = httpClient;
             _jsonSerializerOptions = jsonSerializerOptions.Get("HyperSharp");
         }
 
-        public async ValueTask<DiscordApiResult<IReadOnlyList<IApplicationCommand>>> RegisterApplicationCommandsAsync(IReadOnlyList<IBulkApplicationCommandData> applicationCommandData)
+        public async ValueTask<ApiResult<IReadOnlyList<IApplicationCommand>>> RegisterApplicationCommandsAsync(IReadOnlyList<IBulkApplicationCommandData> applicationCommandData)
         {
             HttpRequestMessage request = new(HttpMethod.Put, $"https://discord.com/api/v10/applications/{_configuration.ApplicationId}/commands");
             request.Headers.Add("Authorization", $"Bot {_configuration.Token}");
             request.Content = JsonContent.Create(applicationCommandData, options: _jsonSerializerOptions);
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
-            return new DiscordApiResult<IReadOnlyList<IApplicationCommand>>()
+            return new ApiResult<IReadOnlyList<IApplicationCommand>>()
             {
                 StatusCode = response.StatusCode,
                 Error = response.IsSuccessStatusCode ? null : await response.Content.ReadAsStringAsync(),
@@ -39,13 +39,13 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             };
         }
 
-        public async ValueTask<DiscordApiResult<Channel>> GetChannelAsync(ulong channelId)
+        public async ValueTask<ApiResult<Channel>> GetChannelAsync(ulong channelId)
         {
             HttpRequestMessage request = new(HttpMethod.Get, $"https://discord.com/api/v10/channels/{channelId}");
             request.Headers.Add("Authorization", $"Bot {_configuration.Token}");
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
-            return new DiscordApiResult<Channel>()
+            return new ApiResult<Channel>()
             {
                 StatusCode = response.StatusCode,
                 Error = response.IsSuccessStatusCode ? null : await response.Content.ReadAsStringAsync(),
@@ -53,7 +53,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             };
         }
 
-        public async ValueTask<DiscordApiResult<Channel>> CreateThreadChannelAsync(ulong channelId, string fullName)
+        public async ValueTask<ApiResult<Channel>> CreateThreadChannelAsync(ulong channelId, string fullName)
         {
             HttpRequestMessage request = new(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channelId}/threads");
             request.Headers.Add("Authorization", $"Bot {_configuration.Token}");
@@ -77,7 +77,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             );
 
             HttpResponseMessage response = await _httpClient.SendAsync(request);
-            return new DiscordApiResult<Channel>()
+            return new ApiResult<Channel>()
             {
                 StatusCode = response.StatusCode,
                 Error = response.IsSuccessStatusCode ? null : await response.Content.ReadAsStringAsync(),
@@ -85,7 +85,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             };
         }
 
-        public async ValueTask<DiscordApiResult<Webhook>> CreateWebhookAsync(IPartialChannel channel, string auditLogReason)
+        public async ValueTask<ApiResult<Webhook>> CreateWebhookAsync(IPartialChannel channel, string auditLogReason)
         {
             HttpRequestMessage requestMessage = new(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channel.ID}/webhooks");
             requestMessage.Headers.Add("Authorization", $"Bot {_configuration.Token}");
@@ -99,7 +99,7 @@ namespace OoLunar.GitHubForumWebhookWorker.Discord
             );
 
             HttpResponseMessage response = await _httpClient.SendAsync(requestMessage);
-            return new DiscordApiResult<Webhook>()
+            return new ApiResult<Webhook>()
             {
                 StatusCode = response.StatusCode,
                 Error = response.IsSuccessStatusCode ? null : await response.Content.ReadAsStringAsync(),

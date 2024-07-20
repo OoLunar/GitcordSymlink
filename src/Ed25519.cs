@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace OoLunar.GitHubForumWebhookWorker
+namespace OoLunar.GitcordSymlink
 {
     public static partial class Ed25519
     {

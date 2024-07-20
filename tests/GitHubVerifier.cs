@@ -1,7 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using OoLunar.GitHubForumWebhookWorker.GitHub;
+using OoLunar.GitcordSymlink.GitHub;
 
-namespace OoLunar.GitHubForumWebhookWorker.Tests
+namespace OoLunar.GitcordSymlink.Tests
 {
     [TestClass]
     public class GitHubVerifierTests

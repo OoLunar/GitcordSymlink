@@ -7,16 +7,16 @@ using System.Threading.Tasks;
 using HyperSharp.Protocol;
 using HyperSharp.Responders;
 using HyperSharp.Results;
-using OoLunar.GitHubForumWebhookWorker.Configuration;
+using OoLunar.GitcordSymlink.Configuration;
 
-namespace OoLunar.GitHubForumWebhookWorker.Discord
+namespace OoLunar.GitcordSymlink.Discord
 {
     public sealed class DiscordVerifier : IValueTaskResponder<HyperContext, HyperStatus>
     {
         public static Type[] Needs => [];
         private readonly byte[] _publicKey;
 
-        public DiscordVerifier(GitHubForumWebhookWorkerConfiguration configuration) => _publicKey = Convert.FromHexString(configuration.Discord.PublicKey);
+        public DiscordVerifier(GitcordSymlinkConfiguration configuration) => _publicKey = Convert.FromHexString(configuration.Discord.PublicKey);
 
         public async ValueTask<Result<HyperStatus>> RespondAsync(HyperContext context, CancellationToken cancellationToken = default)
         {

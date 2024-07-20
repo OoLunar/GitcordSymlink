@@ -5,6 +5,6 @@
     <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="$(ProjectRoot)/src/GitHubForumWebhookWorker.csproj" />
+    <ProjectReference Include="$(ProjectRoot)/src/GitcordSymlink.csproj" />
   </ItemGroup>
 </Project>

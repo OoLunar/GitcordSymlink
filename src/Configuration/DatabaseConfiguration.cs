@@ -1,4 +1,4 @@
-namespace OoLunar.GitHubForumWebhookWorker.Configuration
+namespace OoLunar.GitcordSymlink.Configuration
 {
     public sealed record DatabaseConfiguration
     {

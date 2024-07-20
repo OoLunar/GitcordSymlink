@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitHubForumWebhookWorker", "src\GitHubForumWebhookWorker.csproj", "{D2CCE7C9-F19F-4A0D-AEBF-D55D1B7C5225}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitcordSymlink", "src\GitcordSymlink.csproj", "{D2CCE7C9-F19F-4A0D-AEBF-D55D1B7C5225}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OoLunar.GitHubForumWebhookWorker.Tests", "tests\OoLunar.GitHubForumWebhookWorker.Tests.csproj", "{99A73A09-B2A1-4D01-B650-951FA8C0ACF9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OoLunar.GitcordSymlink.Tests", "tests\OoLunar.GitcordSymlink.Tests.csproj", "{99A73A09-B2A1-4D01-B650-951FA8C0ACF9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

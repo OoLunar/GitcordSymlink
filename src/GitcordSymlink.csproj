@@ -9,13 +9,12 @@
   <PropertyGroup>
     <Authors>OoLunar</Authors>
     <Description>A .NET tool that redirects GitHub webhook payloads to Discord forum channels.</Description>
-    <PackageId>OoLunar.GitHubForumWebhookWorker</PackageId>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
-    <PackageProjectUrl>https://github.com/OoLunar/GitHubForumWebhookWorker</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/OoLunar/GitcordSymlink</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/OoLunar/GitHubForumWebhookWorker</RepositoryUrl>
+    <RepositoryUrl>https://github.com/OoLunar/GitcordSymlink</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(ProjectRoot)/res/config.json" CopyToOutputDirectory="Always" Condition="Exists('$(ProjectRoot)/res/config.json')" />
@@ -34,10 +33,10 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
     <PackageReference Include="Octokit.Webhooks" Version="2.2.2" />
     <PackageReference Include="Remora.Discord" Version="2024.2.0" />
-    <PackageReference Include="Serilog" Version="3.1.1" />
+    <PackageReference Include="Serilog" Version="4.0.0" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="ThisAssembly.Project" Version="1.4.3" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" PrivateAssets="all" />
     <ProjectProperty Include="Version" />
     <ProjectProperty Include="RepositoryUrl" />

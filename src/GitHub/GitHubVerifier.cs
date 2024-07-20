@@ -9,9 +9,9 @@ using System.Threading.Tasks;
 using HyperSharp.Protocol;
 using HyperSharp.Responders;
 using HyperSharp.Results;
-using OoLunar.GitHubForumWebhookWorker.Configuration;
+using OoLunar.GitcordSymlink.Configuration;
 
-namespace OoLunar.GitHubForumWebhookWorker.GitHub
+namespace OoLunar.GitcordSymlink.GitHub
 {
     public sealed class GitHubVerifier : IValueTaskResponder<HyperContext, HyperStatus>
     {
@@ -19,7 +19,7 @@ namespace OoLunar.GitHubForumWebhookWorker.GitHub
         private readonly GitHubConfiguration _configuration;
         private readonly byte[] _webhookSecretBytes;
 
-        public GitHubVerifier(GitHubForumWebhookWorkerConfiguration configuration)
+        public GitHubVerifier(GitcordSymlinkConfiguration configuration)
         {
             _configuration = configuration.GitHub;
             _webhookSecretBytes = Encoding.UTF8.GetBytes(_configuration.WebhookSecret);

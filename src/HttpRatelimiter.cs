@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace OoLunar.GitHubForumWebhookWorker
+namespace OoLunar.GitcordSymlink
 {
     public sealed class HttpRatelimiter : DelegatingHandler
     {

@@ -2,14 +2,14 @@ using System.Collections.Generic;
 using Serilog;
 using Serilog.Events;
 
-namespace OoLunar.GitHubForumWebhookWorker.Configuration
+namespace OoLunar.GitcordSymlink.Configuration
 {
     public sealed record LoggerConfiguration
     {
         public string Format { get; init; } = "[{Timestamp:O}] [{Level:u4}] {SourceContext}: {Message:lj}{NewLine}{Exception}";
         public string Path { get; init; } = "logs";
         public string FileName { get; init; } = "yyyy'-'MM'-'dd' 'HH'.'mm'.'ss";
-        public LogEventLevel LogLevel { get; init; } = LogEventLevel.Verbose;
+        public LogEventLevel LogLevel { get; init; } = LogEventLevel.Debug;
         public RollingInterval RollingInterval { get; init; } = RollingInterval.Day;
         public IReadOnlyDictionary<string, LogEventLevel> Overrides { get; init; } = new Dictionary<string, LogEventLevel>();
     }

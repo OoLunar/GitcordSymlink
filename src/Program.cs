@@ -6,15 +6,23 @@ using HyperSharp;
 using HyperSharp.Setup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using OoLunar.GitHubForumWebhookWorker.Configuration;
-using OoLunar.GitHubForumWebhookWorker.Discord;
+using OoLunar.GitcordSymlink.Configuration;
+using OoLunar.GitcordSymlink.Discord;
+using OoLunar.GitcordSymlink.Discord.Commands;
+using OoLunar.GitcordSymlink.Discord.RemoraInteractions;
+using OoLunar.GitcordSymlink.GitHub;
+using Remora.Commands.Extensions;
 using Remora.Discord.API.Extensions;
+using Remora.Discord.Commands.Extensions;
+using Remora.Discord.Commands.Responders;
+using Remora.Discord.Hosting.Extensions;
+using Remora.Discord.Interactivity.Services;
 using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
 using SerilogLoggerConfiguration = Serilog.LoggerConfiguration;
 
-namespace OoLunar.GitHubForumWebhookWorker
+namespace OoLunar.GitcordSymlink
 {
     public sealed class Program
     {
@@ -29,24 +37,24 @@ namespace OoLunar.GitHubForumWebhookWorker
 #if DEBUG
                 configurationBuilder.AddJsonFile("config.debug.json", true, true);
 #endif
-                configurationBuilder.AddEnvironmentVariables("GitHubForumWebhookWorker__");
+                configurationBuilder.AddEnvironmentVariables("GitcordSymlink__");
                 configurationBuilder.AddCommandLine(args);
 
                 IConfiguration configuration = configurationBuilder.Build();
-                GitHubForumWebhookWorkerConfiguration? gitHubForumWebhookWorker = configuration.Get<GitHubForumWebhookWorkerConfiguration>();
-                if (gitHubForumWebhookWorker is null)
+                GitcordSymlinkConfiguration? gitcordSymlinkConfiguration = configuration.Get<GitcordSymlinkConfiguration>();
+                if (gitcordSymlinkConfiguration is null)
                 {
                     Console.WriteLine("No configuration found! Please modify the config file, set environment variables or pass command line arguments. Exiting...");
                     Environment.Exit(1);
                 }
 
-                return gitHubForumWebhookWorker;
+                return gitcordSymlinkConfiguration;
             });
 
             services.AddLogging(logging =>
             {
                 IServiceProvider serviceProvider = logging.Services.BuildServiceProvider();
-                GitHubForumWebhookWorkerConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitHubForumWebhookWorkerConfiguration>();
+                GitcordSymlinkConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>();
                 SerilogLoggerConfiguration serilogLoggerConfiguration = new();
                 serilogLoggerConfiguration.MinimumLevel.Is(gitHubForumWebhookWorker.Logger.LogLevel);
                 serilogLoggerConfiguration.WriteTo.Console(
@@ -87,17 +95,26 @@ namespace OoLunar.GitHubForumWebhookWorker
                     Timeout = TimeSpan.FromHours(1)
                 };
 
-                httpClient.DefaultRequestHeaders.Add("User-Agent", $"OoLunar.GitHubForumWebhookWorker/{ThisAssembly.Project.Version} ({ThisAssembly.Project.RepositoryUrl})");
+                httpClient.DefaultRequestHeaders.Add("User-Agent", $"OoLunar.GitcordSymlink/{ThisAssembly.Project.Version} ({ThisAssembly.Project.RepositoryUrl})");
                 return httpClient;
             });
 
             services.AddSingleton<DatabaseManager>();
             services.AddSingleton<DiscordCommandHandler>();
             services.AddSingleton<DiscordApiRoutes>();
+            services.AddSingleton<GitHubApiRoutes>();
+            services.AddSingleton(InMemoryDataService<string, InteractionWebhookResponse>.Instance);
 
             // Add Remora.Discord json serialization options
             services.AddOptions();
             services.ConfigureDiscordJsonConverters("HyperSharp");
+
+            // Add our commands
+            services
+                .AddDiscordService((serviceProvider) => serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>().Discord.Token)
+                .Configure<InteractionResponderOptions>(config => config.SuppressAutomaticResponses = true)
+                .AddSingleton<DiscordWebhookInteractionAPI>()
+                .AddDiscordCommands(enableSlash: true).AddCommandTree().WithCommandGroup<SyncAccountCommand>().Finish();
 
             // Add our http server
             services.AddHyperSharp((config) =>
@@ -108,7 +125,7 @@ namespace OoLunar.GitHubForumWebhookWorker
 
             // Almost start the program
             IServiceProvider serviceProvider = services.BuildServiceProvider();
-            GitHubForumWebhookWorkerConfiguration gitHubForumWebhookWorker = serviceProvider.GetRequiredService<GitHubForumWebhookWorkerConfiguration>();
+            GitcordSymlinkConfiguration gitcordSymlinkConfiguration = serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>();
 
             // Register commands
             DiscordCommandHandler commandHandler = serviceProvider.GetRequiredService<DiscordCommandHandler>();

@@ -5,9 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using OoLunar.GitHubForumWebhookWorker.Configuration;
+using OoLunar.GitcordSymlink.Configuration;
 
-namespace OoLunar.GitHubForumWebhookWorker
+namespace OoLunar.GitcordSymlink
 {
     public sealed class DatabaseManager : IDisposable
     {
@@ -35,7 +35,7 @@ namespace OoLunar.GitHubForumWebhookWorker
         /// </summary>
         private readonly SemaphoreSlim _commandLock = new(0, 1);
 
-        public DatabaseManager(GitHubForumWebhookWorkerConfiguration configuration, ILogger<DatabaseManager> logger)
+        public DatabaseManager(GitcordSymlinkConfiguration configuration, ILogger<DatabaseManager> logger)
         {
             _logger = logger;
 
