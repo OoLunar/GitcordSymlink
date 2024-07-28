@@ -57,7 +57,7 @@ namespace OoLunar.GitcordSymlink.Discord
         {
             HttpRequestMessage request = new(HttpMethod.Post, $"https://discord.com/api/v10/channels/{channelId}/threads");
             request.Headers.Add("Authorization", $"Bot {_configuration.Token}");
-            request.Headers.Add("X-Audit-Log-Reason", $"Creating project channel for GitHub project '{fullName}'.");
+            request.Headers.Add("X-Audit-Log-Reason", $"Creating project thread for GitHub project '{fullName}'.");
             request.Content = JsonContent.Create(
                 inputValue: new
                 {
