@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using DSharpPlus;
 using DSharpPlus.Commands;
+using DSharpPlus.Commands.Processors.SlashCommands;
 using DSharpPlus.Extensions;
 using HyperSharp;
 using HyperSharp.Setup;
@@ -100,7 +101,7 @@ namespace OoLunar.GitcordSymlink
             services.AddSingleton<GitHubApiRoutes>();
 
             // Add DSharpPlus
-            services.AddDiscordClient((serviceProvider) => serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>().Discord.Token, DiscordIntents.All);
+            services.AddDiscordClient((serviceProvider) => serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>().Discord.Token, DiscordIntents.None);
 
             // Add our http server
             services.AddHyperSharp((config) =>
@@ -115,15 +116,20 @@ namespace OoLunar.GitcordSymlink
 
             // Register commands
             DiscordClient discordClient = serviceProvider.GetRequiredService<DiscordClient>();
-            CommandsExtension commandsExtension = discordClient.UseCommands();
+            await discordClient.InitializeAsync();
+
+            CommandsExtension commandsExtension = discordClient.UseCommands(new()
+            {
+                RegisterDefaultCommandProcessors = false
+            });
+
             commandsExtension.AddCommands(typeof(Program).Assembly);
+            commandsExtension.AddProcessor<SlashCommandProcessor>();
+            await commandsExtension.RefreshAsync();
 
             // Start the server
             HyperServer server = serviceProvider.GetRequiredService<HyperServer>();
             server.Start();
-
-            // Start Discord
-            await discordClient.ConnectAsync();
 
             // Wait for commands
             await Task.Delay(-1);
