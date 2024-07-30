@@ -1,9 +1,13 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using DSharpPlus;
+using DSharpPlus.Entities;
+using DSharpPlus.Exceptions;
 using HyperSharp.Protocol;
 using HyperSharp.Responders;
 using HyperSharp.Results;
@@ -11,8 +15,6 @@ using Microsoft.Extensions.Logging;
 using Octokit.Webhooks.Events;
 using Octokit.Webhooks.Models;
 using Octokit.Webhooks.Models.PingEvent;
-using OoLunar.GitcordSymlink.Discord;
-using Remora.Discord.API.Objects;
 using RepositoryInstallation = Octokit.Webhooks.Models.InstallationEvent.Repository;
 
 namespace OoLunar.GitcordSymlink.GitHub
@@ -23,15 +25,15 @@ namespace OoLunar.GitcordSymlink.GitHub
 
         private readonly ILogger<GitHubAppInstallHandler> _logger;
         private readonly DatabaseManager _discordWebhookManager;
-        private readonly DiscordApiRoutes _discordApiRoutes;
         private readonly GitHubApiRoutes _gitHubApiRoutes;
+        private readonly DiscordClient _discordClient;
 
-        public GitHubAppInstallHandler(ILogger<GitHubAppInstallHandler> logger, DatabaseManager discordWebhookManager, DiscordApiRoutes discordApiRoutes, GitHubApiRoutes gitHubApiRoutes)
+        public GitHubAppInstallHandler(ILogger<GitHubAppInstallHandler> logger, DatabaseManager discordWebhookManager, GitHubApiRoutes gitHubApiRoutes, DiscordClient discordClient)
         {
             _logger = logger;
             _discordWebhookManager = discordWebhookManager;
-            _discordApiRoutes = discordApiRoutes;
             _gitHubApiRoutes = gitHubApiRoutes;
+            _discordClient = discordClient;
         }
 
         [SuppressMessage("Roslyn", "IDE0046", Justification = "Ternary rabbit hole.")]
@@ -107,30 +109,52 @@ namespace OoLunar.GitcordSymlink.GitHub
                 // Verify the post still exists
                 if (postId is not null)
                 {
-                    ApiResult<Channel> existingThread = await _discordApiRoutes.GetChannelAsync(postId.Value);
-                    if (existingThread.Value is null)
+                    DiscordChannel existingThread;
+                    try
                     {
-                        _logger.LogError("Failed to get thread channel: {StatusCode} {Error}", existingThread.StatusCode, existingThread.Error);
-                        return HyperStatus.InternalServerError(new Error("Failed to get channel."));
+                        existingThread = await _discordClient.GetChannelAsync(postId.Value);
                     }
-                    else if (existingThread.Value is not null)
+                    catch (DiscordException error)
                     {
-                        // The post exists
-                        _logger.LogInformation("Thread channel already exists for {Repository}, skipping...", repository.FullName);
-                        continue;
+                        if (error.Response is null)
+                        {
+                            _logger.LogError("Failed to get thread channel: {Error}", error.Message);
+                            return HyperStatus.InternalServerError(new Error("Failed to get channel."));
+                        }
+                        else if (error.Response.StatusCode == HttpStatusCode.NotFound)
+                        {
+                            // The post doesn't exist
+                            _logger.LogInformation("Thread channel doesn't exist for {Repository}, creating a new one...", repository.FullName);
+                        }
+                        else
+                        {
+                            _logger.LogError("Failed to get thread channel: {StatusCode} {Error}", error.Response.StatusCode, error.JsonMessage);
+                            return HyperStatus.InternalServerError(new Error("Failed to get channel."));
+                        }
                     }
                 }
 
                 // Create a new post
-                ApiResult<Channel> newThread = await _discordApiRoutes.CreateThreadChannelAsync(channelId, repository.FullName);
-                if (newThread.Value is null)
+                DiscordThreadChannel threadChannel;
+                try
                 {
-                    _logger.LogError("Failed to create thread channel: {StatusCode} {Error}", newThread.StatusCode, newThread.Error);
+                    DiscordChannel parentChannel = await _discordClient.GetChannelAsync(channelId);
+                    threadChannel = await parentChannel.CreateThreadAsync(repository.FullName, DiscordAutoArchiveDuration.Week, DiscordChannelType.PublicThread, $"Creating thread for the {repository.FullName} GitHub repository.");
+                }
+                catch (DiscordException error)
+                {
+                    if (error.Response is null)
+                    {
+                        _logger.LogError("Failed to create thread channel: {Error}", error.Message);
+                        return HyperStatus.InternalServerError(new Error("Failed to create channel."));
+                    }
+
+                    _logger.LogError("Failed to create thread channel: {StatusCode} {Error}", error.Response.StatusCode, error.JsonMessage);
                     return HyperStatus.InternalServerError(new Error("Failed to create channel."));
                 }
 
                 // Store the repository and thread ID in the database
-                await _discordWebhookManager.CreateNewRepositoryAsync(installation.Installation.Account.Login, repository.Name, newThread.Value.ID.Value, cancellationToken);
+                await _discordWebhookManager.CreateNewRepositoryAsync(installation.Installation.Account.Login, repository.Name, threadChannel.Id, cancellationToken);
 
                 // Check to see if the access token expired
                 if (expiresAt < DateTimeOffset.UtcNow)
@@ -140,7 +164,7 @@ namespace OoLunar.GitcordSymlink.GitHub
                 }
 
                 // Add the webhook to the repository
-                ApiResult<Hook> webhook = await _gitHubApiRoutes.InstallWebhookAsync(accessToken, repository.FullName, $"{webhookUrl}?thread_id={newThread.Value.ID}", AppEvent.All);
+                ApiResult<Hook> webhook = await _gitHubApiRoutes.InstallWebhookAsync(accessToken, repository.FullName, $"{webhookUrl}?thread_id={threadChannel.Id}", AppEvent.All);
                 if (webhook.Value is null)
                 {
                     _logger.LogError("Failed to install webhook for {Repository}: {StatusCode} {Error}", repository.FullName, webhook.StatusCode, webhook.Error);

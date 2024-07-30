@@ -2,21 +2,16 @@ using System;
 using System.Globalization;
 using System.Net.Http;
 using System.Threading.Tasks;
+using DSharpPlus;
+using DSharpPlus.Commands;
+using DSharpPlus.Extensions;
 using HyperSharp;
 using HyperSharp.Setup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OoLunar.GitcordSymlink.Configuration;
 using OoLunar.GitcordSymlink.Discord;
-using OoLunar.GitcordSymlink.Discord.Commands;
-using OoLunar.GitcordSymlink.Discord.RemoraInteractions;
 using OoLunar.GitcordSymlink.GitHub;
-using Remora.Commands.Extensions;
-using Remora.Discord.API.Extensions;
-using Remora.Discord.Commands.Extensions;
-using Remora.Discord.Commands.Responders;
-using Remora.Discord.Hosting.Extensions;
-using Remora.Discord.Interactivity.Services;
 using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -80,7 +75,8 @@ namespace OoLunar.GitcordSymlink
                     }
                 }
 
-                logging.AddSerilog(serilogLoggerConfiguration.CreateLogger());
+                Log.Logger = serilogLoggerConfiguration.CreateLogger();
+                logging.AddSerilog();
             });
 
             // Add our ratelimiter
@@ -101,20 +97,10 @@ namespace OoLunar.GitcordSymlink
 
             services.AddSingleton<DatabaseManager>();
             services.AddSingleton<DiscordCommandHandler>();
-            services.AddSingleton<DiscordApiRoutes>();
             services.AddSingleton<GitHubApiRoutes>();
-            services.AddSingleton(InMemoryDataService<string, InteractionWebhookResponse>.Instance);
 
-            // Add Remora.Discord json serialization options
-            services.AddOptions();
-            services.ConfigureDiscordJsonConverters("HyperSharp");
-
-            // Add our commands
-            services
-                .AddDiscordService((serviceProvider) => serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>().Discord.Token)
-                .Configure<InteractionResponderOptions>(config => config.SuppressAutomaticResponses = true)
-                .AddSingleton<DiscordWebhookInteractionAPI>()
-                .AddDiscordCommands(enableSlash: true).AddCommandTree().WithCommandGroup<SyncAccountCommand>().Finish();
+            // Add DSharpPlus
+            services.AddDiscordClient((serviceProvider) => serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>().Discord.Token, DiscordIntents.All);
 
             // Add our http server
             services.AddHyperSharp((config) =>
@@ -128,12 +114,16 @@ namespace OoLunar.GitcordSymlink
             GitcordSymlinkConfiguration gitcordSymlinkConfiguration = serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>();
 
             // Register commands
-            DiscordCommandHandler commandHandler = serviceProvider.GetRequiredService<DiscordCommandHandler>();
-            await commandHandler.RegisterCommandsAsync();
+            DiscordClient discordClient = serviceProvider.GetRequiredService<DiscordClient>();
+            CommandsExtension commandsExtension = discordClient.UseCommands();
+            commandsExtension.AddCommands(typeof(Program).Assembly);
 
             // Start the server
             HyperServer server = serviceProvider.GetRequiredService<HyperServer>();
             server.Start();
+
+            // Start Discord
+            await discordClient.ConnectAsync();
 
             // Wait for commands
             await Task.Delay(-1);
