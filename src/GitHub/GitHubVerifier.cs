@@ -32,7 +32,7 @@ namespace OoLunar.GitcordSymlink.GitHub
                 // Skip this responder if the route doesn't start with /github
                 return Result.Failure<HyperStatus>();
             }
-            else if (!context.Headers.TryGetValue("Content-Length", out string? contentLengthString))
+            else if (!context.Headers.TryGetValue("Content-Length", out string? contentLengthString) || string.IsNullOrWhiteSpace(contentLengthString))
             {
                 return HyperStatus.BadRequest(new Error("Missing content length."));
             }
@@ -54,7 +54,8 @@ namespace OoLunar.GitcordSymlink.GitHub
                         return HyperStatus.BadRequest(new Error("Content length exceeded."));
                     }
 
-                    bytesRead += ParseBody(context, readResult, bodyBuffer.AsSpan(bytesRead, (int)readResult.Buffer.Length));
+                    readResult.Buffer.CopyTo(bodyBuffer.AsSpan(bytesRead));
+                    bytesRead += (int)readResult.Buffer.Length;
                     if (readResult.IsCompleted)
                     {
                         if (bytesRead != contentLength)
@@ -65,6 +66,8 @@ namespace OoLunar.GitcordSymlink.GitHub
                         break;
                     }
                 } while (bytesRead != contentLength);
+
+                StoreGitHubMetadata(context, bodyBuffer);
 
                 // Store the body
                 context.Metadata["body"] = Encoding.UTF8.GetString(bodyBuffer, 0, bytesRead);
@@ -85,17 +88,18 @@ namespace OoLunar.GitcordSymlink.GitHub
             }
         }
 
-        public static int ParseBody(HyperContext context, ReadResult readResult, Span<byte> bodyBuffer)
+        public static void StoreGitHubMetadata(HyperContext context, ReadOnlySpan<byte> bodyBuffer)
         {
             if (!context.Metadata.ContainsKey("account"))
             {
-                Utf8JsonReader utf8JsonReader = new(readResult.Buffer);
+                Utf8JsonReader utf8JsonReader = new(bodyBuffer);
                 while (utf8JsonReader.TokenType != JsonTokenType.PropertyName || utf8JsonReader.GetString() != "full_name")
                 {
                     // Keep reading until we find the full name property
                     if (!utf8JsonReader.Read())
                     {
-                        break;
+                        // We reached the end of the JSON without finding the property
+                        return;
                     }
                 }
 
@@ -107,10 +111,6 @@ namespace OoLunar.GitcordSymlink.GitHub
                 context.Metadata["account"] = fullName[0];
                 context.Metadata["repository"] = fullName[1];
             }
-
-            readResult.Buffer.CopyTo(bodyBuffer);
-            context.BodyReader.AdvanceTo(readResult.Buffer.End);
-            return (int)readResult.Buffer.Length;
         }
 
         public static bool TryVerifySignature(ReadOnlySpan<byte> body, ReadOnlySpan<byte> secretKey, string signature)

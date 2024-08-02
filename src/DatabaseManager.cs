@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using OoLunar.GitcordSymlink.Configuration;
+using OoLunar.GitcordSymlink.Entities;
 
 namespace OoLunar.GitcordSymlink
 {
@@ -51,7 +52,7 @@ namespace OoLunar.GitcordSymlink
             _connection.Open();
 
             _createAccountTableCommand = _connection.CreateCommand();
-            _createAccountTableCommand.CommandText = @"CREATE TABLE IF NOT EXISTS Account (Name TEXT, ChannelId INTEGER NOT NULL, WebhookUrl TEXT)";
+            _createAccountTableCommand.CommandText = @"CREATE TABLE IF NOT EXISTS Account (Name TEXT, ChannelId INTEGER NOT NULL, SyncAccountOptions INTEGER NOT NULL, WebhookUrl TEXT)";
             _createAccountTableCommand.ExecuteNonQuery();
 
             _createRepositoryTableCommand = _connection.CreateCommand();
@@ -59,9 +60,10 @@ namespace OoLunar.GitcordSymlink
             _createRepositoryTableCommand.ExecuteNonQuery();
 
             _createNewAccountCommand = _connection.CreateCommand();
-            _createNewAccountCommand.CommandText = "INSERT INTO Account (Name, ChannelId, WebhookUrl) VALUES (@Name, @ChannelId, @WebhookUrl)";
+            _createNewAccountCommand.CommandText = "INSERT INTO Account (Name, ChannelId, SyncAccountOptions, WebhookUrl) VALUES (@Name, @ChannelId, @SyncAccountOptions, @WebhookUrl)";
             _createNewAccountCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
             _createNewAccountCommand.Parameters.Add(new SqliteParameter("@ChannelId", DbType.Int64));
+            _createNewAccountCommand.Parameters.Add(new SqliteParameter("@SyncAccountOptions", DbType.Int32));
             _createNewAccountCommand.Parameters.Add(new SqliteParameter("@WebhookUrl", DbType.String));
             _createNewAccountCommand.Prepare();
 
@@ -73,7 +75,7 @@ namespace OoLunar.GitcordSymlink
             _createNewRepositoryCommand.Prepare();
 
             _getAccountCommand = _connection.CreateCommand();
-            _getAccountCommand.CommandText = "SELECT ChannelId, WebhookUrl FROM Account WHERE Name = @Name";
+            _getAccountCommand.CommandText = "SELECT ChannelId, SyncAccountOptions, WebhookUrl FROM Account WHERE Name = @Name";
             _getAccountCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
             _getAccountCommand.Prepare();
 
@@ -134,13 +136,14 @@ namespace OoLunar.GitcordSymlink
             _commandLock.Release();
         }
 
-        public async ValueTask CreateNewAccountAsync(string accountName, ulong channelId, string? webhookUrl = null, CancellationToken cancellationToken = default)
+        public async ValueTask CreateNewAccountAsync(string accountName, ulong channelId, GitcordSyncOptions syncOptions, string? webhookUrl = null, CancellationToken cancellationToken = default)
         {
             try
             {
                 await _commandLock.WaitAsync(cancellationToken);
                 _createNewAccountCommand.Parameters["@Name"].Value = accountName;
                 _createNewAccountCommand.Parameters["@ChannelId"].Value = channelId;
+                _createNewAccountCommand.Parameters["@SyncAccountOptions"].Value = (int)syncOptions;
                 _createNewAccountCommand.Parameters["@WebhookUrl"].Value = webhookUrl;
                 await _createNewAccountCommand.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -166,14 +169,20 @@ namespace OoLunar.GitcordSymlink
             }
         }
 
-        public async ValueTask<(ulong ChannelId, string? WebhookUrl)> GetAccountAsync(string accountName, CancellationToken cancellationToken = default)
+        public async ValueTask<GitcordAccount?> GetAccountAsync(string accountName, CancellationToken cancellationToken = default)
         {
             try
             {
                 await _commandLock.WaitAsync(cancellationToken);
                 _getAccountCommand.Parameters["@Name"].Value = accountName;
                 using SqliteDataReader reader = await _getAccountCommand.ExecuteReaderAsync(cancellationToken);
-                return reader.Read() ? (Convert.ToUInt64(reader.GetInt64(0)), reader.GetString(1)) : (0, null);
+                return reader.Read() ? new GitcordAccount
+                {
+                    Name = accountName,
+                    ChannelId = unchecked((ulong)reader.GetInt64(0)),
+                    SyncOptions = (GitcordSyncOptions)reader.GetInt32(1),
+                    WebhookUrl = reader.GetString(2)
+                } : null;
             }
             finally
             {

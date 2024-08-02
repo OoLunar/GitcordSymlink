@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using DSharpPlus;
@@ -22,8 +23,37 @@ namespace OoLunar.GitcordSymlink.Discord
 
         public async ValueTask<Result<HyperStatus>> RespondAsync(HyperContext context, CancellationToken cancellationToken = default)
         {
-            byte[] response = await _discordClient.HandleHttpInteractionAsync(Encoding.UTF8.GetBytes(context.Metadata["body"]), cancellationToken);
+            byte[] request = Encoding.UTF8.GetBytes(context.Metadata["body"]);
+            ulong? guildId = GetGuildId(request);
+            if (guildId is not null && !_discordClient.Guilds.ContainsKey(guildId.Value))
+            {
+                // Populate the cache if the guild doesn't exist
+                await _discordClient.GetGuildAsync(guildId.Value);
+            }
+
+            byte[] response = await _discordClient.HandleHttpInteractionAsync(request, cancellationToken);
             return HyperStatus.OK(_headers, response, HyperSerializers.RawAsync);
+        }
+
+        private static ulong? GetGuildId(byte[] utf8Json)
+        {
+            Utf8JsonReader reader = new(utf8Json);
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.PropertyName && reader.GetString() == "guild_id")
+                {
+                    reader.Read();
+                    string? value = reader.GetString();
+                    if (ulong.TryParse(value, out ulong guildId))
+                    {
+                        return guildId;
+                    }
+
+                    break;
+                }
+            }
+
+            return null;
         }
     }
 }

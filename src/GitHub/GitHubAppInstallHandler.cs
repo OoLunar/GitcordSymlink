@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net;
@@ -14,7 +16,7 @@ using HyperSharp.Results;
 using Microsoft.Extensions.Logging;
 using Octokit.Webhooks.Events;
 using Octokit.Webhooks.Models;
-using Octokit.Webhooks.Models.PingEvent;
+using OoLunar.GitcordSymlink.Entities;
 using RepositoryInstallation = Octokit.Webhooks.Models.InstallationEvent.Repository;
 
 namespace OoLunar.GitcordSymlink.GitHub
@@ -68,8 +70,8 @@ namespace OoLunar.GitcordSymlink.GitHub
 
         private async ValueTask<HyperStatus> InstallAsync(InstallationEvent installation, CancellationToken cancellationToken)
         {
-            (ulong channelId, string? webhookUrl) = await _discordWebhookManager.GetAccountAsync(installation.Installation.Account.Login.ToLowerInvariant(), cancellationToken);
-            if (webhookUrl is null)
+            GitcordAccount? account = await _discordWebhookManager.GetAccountAsync(installation.Installation.Account.Login.ToLowerInvariant(), cancellationToken);
+            if (account is null || account.WebhookUrl is null)
             {
                 return HyperStatus.BadRequest(new Error("Please sync your account with the Discord bot before installing the GitHub app."));
             }
@@ -81,23 +83,33 @@ namespace OoLunar.GitcordSymlink.GitHub
             // Install the webhooks onto all the repositories
             foreach (RepositoryInstallation repository in installation.Repositories)
             {
-                // Grab the repository and skip it if it's archived, private or a fork
-                if (repository.Private)
+                // Skip the repository if it's metadata doesn't match the installation flags
+                if (!repository.Private && !account.SyncOptions.HasFlag(GitcordSyncOptions.Public))
+                {
+                    _logger.LogInformation("Skipping public repository {Repository}", repository.FullName);
+                    continue;
+                }
+                else if (repository.Private && !account.SyncOptions.HasFlag(GitcordSyncOptions.Private))
                 {
                     _logger.LogInformation("Skipping private repository {Repository}", repository.FullName);
                     continue;
                 }
 
                 // Get the repo and skip it if it's a fork or archived
-                ApiResult<Repository> repositoryDetails = await _gitHubApiRoutes.GetRepositoryAsync(accessToken, repository.FullName);
+                ApiResult<GitHubRepository> repositoryDetails = await _gitHubApiRoutes.GetRepositoryAsync(accessToken, repository.FullName);
                 if (!repositoryDetails.IsSuccessful)
                 {
                     _logger.LogError("Failed to get repository details for {Repository}: {StatusCode} {Error}", repository.FullName, repositoryDetails.StatusCode, repositoryDetails.Error);
                     return HyperStatus.InternalServerError(new Error("Failed to get repository details."));
                 }
-                else if (repositoryDetails.Value.Archived || repositoryDetails.Value.Fork)
+                else if (repositoryDetails.Value.Archived && !account.SyncOptions.HasFlag(GitcordSyncOptions.Archived))
                 {
-                    _logger.LogInformation("Skipping archived/forked repository {Repository}", repository.FullName);
+                    _logger.LogInformation("Skipping archived repository {Repository}", repository.FullName);
+                    continue;
+                }
+                else if (repositoryDetails.Value.Fork && !account.SyncOptions.HasFlag(GitcordSyncOptions.Forked))
+                {
+                    _logger.LogInformation("Skipping forked repository {Repository}", repository.FullName);
                     continue;
                 }
 
@@ -135,11 +147,17 @@ namespace OoLunar.GitcordSymlink.GitHub
                 }
 
                 // Create a new post
-                DiscordThreadChannel threadChannel;
+                ulong threadChannelId;
                 try
                 {
-                    DiscordChannel parentChannel = await _discordClient.GetChannelAsync(channelId);
-                    threadChannel = await parentChannel.CreateThreadAsync(repository.FullName, DiscordAutoArchiveDuration.Week, DiscordChannelType.PublicThread, $"Creating thread for the {repository.FullName} GitHub repository.");
+                    DiscordChannel parentChannel = await _discordClient.GetChannelAsync(account.ChannelId);
+                    threadChannelId = parentChannel switch
+                    {
+                        DiscordForumChannel forumChannel => (await forumChannel.CreateForumPostAsync(new ForumPostBuilder().WithName(repository.Name).WithMessage(new DiscordMessageBuilder().AddEmbed(new DiscordEmbedBuilder().WithColor(new DiscordColor(0x6b73db)).WithDescription($"Linking [`{repository.FullName}`](https://github.com/{repository.FullName}) from GitHub to Discord..."))))).Channel.Id,
+                        DiscordThreadChannel threadChannel => (await threadChannel.CreateThreadAsync(repository.FullName, DiscordAutoArchiveDuration.Week, DiscordChannelType.PublicThread, $"Creating thread for the {repository.FullName} GitHub repository.")).Id,
+                        //DiscordChannel channel when channel.Type is DiscordChannelType.Category => (await channel.Guild.CreateTextChannelAsync(repository.FullName, parent: channel, reason: $"Creating channel for the {repository.FullName} GitHub repository.")).Id,
+                        _ => throw new UnreachableException("Parent channel is not a forum, thread or category channel.")
+                    };
                 }
                 catch (DiscordException error)
                 {
@@ -154,7 +172,7 @@ namespace OoLunar.GitcordSymlink.GitHub
                 }
 
                 // Store the repository and thread ID in the database
-                await _discordWebhookManager.CreateNewRepositoryAsync(installation.Installation.Account.Login, repository.Name, threadChannel.Id, cancellationToken);
+                await _discordWebhookManager.CreateNewRepositoryAsync(installation.Installation.Account.Login, repository.Name, threadChannelId, cancellationToken);
 
                 // Check to see if the access token expired
                 if (expiresAt < DateTimeOffset.UtcNow)
@@ -163,20 +181,59 @@ namespace OoLunar.GitcordSymlink.GitHub
                     (accessToken, expiresAt) = await _gitHubApiRoutes.GetAccessTokenAsync(installation.Installation.Id, installation.Repositories.Select(repository => repository.Id));
                 }
 
+                // If the repository is archived, temporarily unarchive it to install the webhook
+                bool isArchived = repositoryDetails.Value.Archived;
+                if (isArchived)
+                {
+                    ApiResult<bool> unarchiveRepository = await _gitHubApiRoutes.UpdateRepositoryArchiveStatusAsync(accessToken, repository.FullName, false);
+                    if (!unarchiveRepository.IsSuccessful || !unarchiveRepository.Value)
+                    {
+                        _logger.LogError("Failed to unarchive repository {Repository}: {StatusCode} {Error}", repository.FullName, unarchiveRepository.StatusCode, unarchiveRepository.Error);
+                        return HyperStatus.InternalServerError(new Error("Failed to unarchive repository."));
+                    }
+                }
+
+#if DEBUG
+                // Clear any duplicate webhooks from previous debug testing installations
+                ApiResult<IReadOnlyList<ulong>> existingDiscordWebhooks = await _gitHubApiRoutes.ListRepositoryDiscordWebhooksAsync(accessToken, repository.FullName);
+                if (existingDiscordWebhooks.IsSuccessful)
+                {
+                    foreach (ulong existingDiscordWebhookId in existingDiscordWebhooks.Value)
+                    {
+                        ApiResult<bool> deleteWebhook = await _gitHubApiRoutes.DeleteWebhookAsync(accessToken, repository.FullName, existingDiscordWebhookId);
+                        if (!deleteWebhook.IsSuccessful || !deleteWebhook.Value)
+                        {
+                            _logger.LogError("Failed to delete webhook for {Repository}: {StatusCode} {Error}", repository.FullName, deleteWebhook.StatusCode, deleteWebhook.Error);
+                        }
+                    }
+                }
+#endif
+
                 // Add the webhook to the repository
-                ApiResult<Hook> webhook = await _gitHubApiRoutes.InstallWebhookAsync(accessToken, repository.FullName, $"{webhookUrl}?thread_id={threadChannel.Id}", AppEvent.All);
-                if (webhook.Value is null)
+                ApiResult<ulong> webhook = await _gitHubApiRoutes.InstallWebhookAsync(accessToken, repository.FullName, $"{account.WebhookUrl}?thread_id={threadChannelId}", [AppEvent.All]);
+                if (!webhook.IsSuccessful)
                 {
                     _logger.LogError("Failed to install webhook for {Repository}: {StatusCode} {Error}", repository.FullName, webhook.StatusCode, webhook.Error);
                     return HyperStatus.InternalServerError(new Error("Failed to install webhook."));
                 }
 
                 // Test the webhook
-                ApiResult<object> testWebhook = await _gitHubApiRoutes.TestWebhookAsync(accessToken, repository.FullName, webhook.Value.Id);
+                ApiResult<object> testWebhook = await _gitHubApiRoutes.TestWebhookAsync(accessToken, repository.FullName, webhook.Value);
                 if (!testWebhook.IsSuccessful)
                 {
                     _logger.LogError("Failed to test webhook for {Repository}: {StatusCode} {Error}", repository.FullName, testWebhook.StatusCode, testWebhook.Error);
                     return HyperStatus.InternalServerError(new Error("Failed to test webhook."));
+                }
+
+                // If the repository was archived, re-archive it
+                if (isArchived)
+                {
+                    ApiResult<bool> archiveRepository = await _gitHubApiRoutes.UpdateRepositoryArchiveStatusAsync(accessToken, repository.FullName, true);
+                    if (!archiveRepository.IsSuccessful || !archiveRepository.Value)
+                    {
+                        _logger.LogError("Failed to archive repository {Repository}: {StatusCode} {Error}", repository.FullName, archiveRepository.StatusCode, archiveRepository.Error);
+                        return HyperStatus.InternalServerError(new Error("Failed to archive repository."));
+                    }
                 }
 
                 _logger.LogInformation("Installed webhook for {Repository}", repository.FullName);
