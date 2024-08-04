@@ -1,3 +1,6 @@
+[submodule "libs/DSharpPlus"]
+    path = libs/DSharpPlus
+    url = https://github.com:OoLunar/DSharpPlus.git
 [submodule "libs/HyperSharp"]
 	path = libs/HyperSharp
-	url = git@github.com:OoLunar/HyperSharp.git
+	url = https://github.com:OoLunar/HyperSharp.git

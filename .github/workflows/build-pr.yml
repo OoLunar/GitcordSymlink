@@ -10,7 +10,7 @@ on:
     paths:
       - ".github/workflows/build-pr.yml"
       - "src/**"
-      - "GitHubForumWebhookWorker.sln"
+      - "*.sln"
 
 env:
   DOTNET_NOLOGO: 1
@@ -35,4 +35,4 @@ jobs:
       - name: Build Project
         run: dotnet build
       - name: Build Dockerfile
-        run: docker build -t oolunar/githubforumwebhookworker:latest .
+        run: docker build -t oolunar/gitcordsymlink:latest .

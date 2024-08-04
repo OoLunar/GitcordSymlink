@@ -5,7 +5,7 @@ on:
     paths:
       - ".github/workflows/build-commit.yml"
       - "src/**"
-      - "GitHubForumWebhookWorker.sln"
+      - "GitcordSymlink.sln"
   workflow_dispatch:
 
 env:
@@ -16,19 +16,20 @@ env:
 
 jobs:
   build-commit:
-    name: Build Commit ${{ github.sha }}
+    name: Build Commit
     runs-on: ubuntu-latest
     if: "!contains(format('{0} {1}', github.event.head_commit.message, github.event.pull_request.title), '[ci-skip]')"
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+          fetch-depth: 0
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8
       - name: Build Project
         run: dotnet build
       - name: Build Dockerfile
-        run: docker build -t oolunar/githubforumwebhookworker:latest .
+        run: docker build -t oolunar/gitcordsymlink:latest .
