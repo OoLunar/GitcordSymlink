@@ -29,9 +29,9 @@ namespace OoLunar.GitcordSymlink
             {
                 ConfigurationBuilder configurationBuilder = new();
                 configurationBuilder.Sources.Clear();
-                configurationBuilder.AddJsonFile("config.json", true, true);
+                configurationBuilder.AddJsonFile("config.json", true, false);
 #if DEBUG
-                configurationBuilder.AddJsonFile("config.debug.json", true, true);
+                configurationBuilder.AddJsonFile("config.debug.json", true, false);
 #endif
                 configurationBuilder.AddEnvironmentVariables("GitcordSymlink__");
                 configurationBuilder.AddCommandLine(args);
@@ -102,6 +102,14 @@ namespace OoLunar.GitcordSymlink
 
             // Add DSharpPlus
             services.AddDiscordClient((serviceProvider) => serviceProvider.GetRequiredService<GitcordSymlinkConfiguration>().Discord.Token, DiscordIntents.None);
+            services.AddCommandsExtension((serviceProvider, commandsExtension) =>
+            {
+                commandsExtension.AddCommands(typeof(Program).Assembly);
+                commandsExtension.AddProcessor<SlashCommandProcessor>();
+            }, new CommandsConfiguration()
+            {
+                RegisterDefaultCommandProcessors = false
+            });
 
             // Add our http server
             services.AddHyperSharp((config) =>
@@ -118,13 +126,8 @@ namespace OoLunar.GitcordSymlink
             DiscordClient discordClient = serviceProvider.GetRequiredService<DiscordClient>();
             await discordClient.InitializeAsync();
 
-            CommandsExtension commandsExtension = discordClient.UseCommands(new()
-            {
-                RegisterDefaultCommandProcessors = false
-            });
-
-            commandsExtension.AddCommands(typeof(Program).Assembly);
-            commandsExtension.AddProcessor<SlashCommandProcessor>();
+            // Grab the commands extension
+            CommandsExtension commandsExtension = serviceProvider.GetRequiredService<CommandsExtension>();
             await commandsExtension.RefreshAsync();
 
             // Start the server

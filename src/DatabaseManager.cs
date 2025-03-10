@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
 using System.Threading;
@@ -30,6 +31,8 @@ namespace OoLunar.GitcordSymlink
         private readonly SqliteCommand _getAccountCommand;
         private readonly SqliteCommand _getWebhookCommand;
         private readonly SqliteCommand _getPostIdCommand;
+        private readonly SqliteCommand _getAllRepositoriesCommand;
+        private readonly SqliteCommand _updateAccountCommand;
 
         /// <summary>
         /// An SQL command lock to prevent multiple SQL commands from being executed at the same time.
@@ -89,6 +92,19 @@ namespace OoLunar.GitcordSymlink
             _getPostIdCommand.Parameters.Add(new SqliteParameter("@Account", DbType.String));
             _getPostIdCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
             _getPostIdCommand.Prepare();
+
+            _getAllRepositoriesCommand = _connection.CreateCommand();
+            _getAllRepositoriesCommand.CommandText = "SELECT Name, ThreadId FROM Repository WHERE Account = @Account";
+            _getAllRepositoriesCommand.Parameters.Add(new SqliteParameter("@Account", DbType.String));
+            _getAllRepositoriesCommand.Prepare();
+
+            _updateAccountCommand = _connection.CreateCommand();
+            _updateAccountCommand.CommandText = "UPDATE Account SET ChannelId = @ChannelId, SyncAccountOptions = @SyncAccountOptions, WebhookUrl = @WebhookUrl WHERE Name = @Name";
+            _updateAccountCommand.Parameters.Add(new SqliteParameter("@ChannelId", DbType.Int64));
+            _updateAccountCommand.Parameters.Add(new SqliteParameter("@SyncAccountOptions", DbType.Int32));
+            _updateAccountCommand.Parameters.Add(new SqliteParameter("@WebhookUrl", DbType.String));
+            _updateAccountCommand.Parameters.Add(new SqliteParameter("@Name", DbType.String));
+            _updateAccountCommand.Prepare();
 
             // Release the lock
             _commandLock.Release();
@@ -220,6 +236,44 @@ namespace OoLunar.GitcordSymlink
             }
         }
 
+        public async ValueTask<IReadOnlyDictionary<string, ulong>> GetAllRepositoriesAsync(string accountName, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await _commandLock.WaitAsync(cancellationToken);
+                _getAllRepositoriesCommand.Parameters["@Account"].Value = accountName;
+                using SqliteDataReader reader = await _getAllRepositoriesCommand.ExecuteReaderAsync(cancellationToken);
+                Dictionary<string, ulong> repositories = [];
+                while (reader.Read())
+                {
+                    repositories.Add(reader.GetString(0), unchecked((ulong)reader.GetInt64(1)));
+                }
+
+                return repositories;
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
+        public async ValueTask<bool> UpdateAccountAsync(GitcordAccount account, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await _commandLock.WaitAsync(cancellationToken);
+                _updateAccountCommand.Parameters["@ChannelId"].Value = account.ChannelId;
+                _updateAccountCommand.Parameters["@SyncAccountOptions"].Value = (int)account.SyncOptions;
+                _updateAccountCommand.Parameters["@WebhookUrl"].Value = account.WebhookUrl;
+                _updateAccountCommand.Parameters["@Name"].Value = account.Name;
+                return await _updateAccountCommand.ExecuteNonQueryAsync(cancellationToken) > 0;
+            }
+            finally
+            {
+                _commandLock.Release();
+            }
+        }
+
         public void Dispose()
         {
             _connection.StateChange -= DatabaseStateChanged;
@@ -231,6 +285,7 @@ namespace OoLunar.GitcordSymlink
             _createNewRepositoryCommand.Dispose();
             _getWebhookCommand.Dispose();
             _getPostIdCommand.Dispose();
+            _updateAccountCommand.Dispose();
             _commandLock.Dispose();
         }
     }

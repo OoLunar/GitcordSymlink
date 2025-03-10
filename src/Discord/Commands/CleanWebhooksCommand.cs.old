@@ -1,0 +1,60 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading.Tasks;
+using DSharpPlus.Commands;
+using DSharpPlus.Commands.Processors.SlashCommands;
+using HyperSharp.Results;
+using OoLunar.GitcordSymlink.GitHub;
+
+namespace OoLunar.GitcordSymlink.Discord.Commands
+{
+    public sealed class CleanWebhooksCommand
+    {
+        private readonly DatabaseManager _databaseManager;
+        private readonly GitHubApiRoutes _gitHubApiRoutes;
+
+        public CleanWebhooksCommand(DatabaseManager databaseManager, GitHubApiRoutes gitHubApiRoutes)
+        {
+            _databaseManager = databaseManager;
+            _gitHubApiRoutes = gitHubApiRoutes;
+        }
+
+        [Command("clean_webhooks"), Description("Cleans up any stale Discord webhooks.")]
+        public async ValueTask ExecuteAsync(SlashCommandContext context, string account, string? repository)
+        {
+            await context.DeferResponseAsync(true);
+
+            string? webhookUrl = await _databaseManager.GetWebhookUrlAsync(account);
+            if (webhookUrl is null)
+            {
+                await context.RespondAsync($"No repositories have been synced with account `{account}`.");
+                return;
+            }
+
+            Result<(int RepositoryCount, int RemovedWebhooksCount)> errors = string.IsNullOrWhiteSpace(repository)
+                ? await CleanAllRepositoriesAsync(webhookUrl, account)
+                : await CleanSingleRepositoryAsync(webhookUrl, account, repository);
+
+            await context.RespondAsync(errors.IsSuccess switch
+            {
+                _ when !errors.HasValue => throw new UnreachableException($"Method {(string.IsNullOrWhiteSpace(repository) ? nameof(CleanAllRepositoriesAsync) : nameof(CleanSingleRepositoryAsync))} returned a successful result that did not contain a value."),
+                true when string.IsNullOrWhiteSpace(repository) => $"All {errors.Value.RepositoryCount:N0} repositories have had a total of {errors.Value.RemovedWebhooksCount:N0} stale Discord webhooks removed.",
+                true => $"Repository [`account/repository`](https://github.com/{account}/{repository}) has had {errors.Value.RemovedWebhooksCount:N0} stale webhooks removed.",
+                false when errors.Errors.Count == 1 => $"Failed to clean webhooks: {errors.Errors[0].Message}",
+                false => $"Failed to clean webhooks:\n{string.Join('\n', errors.Errors.Select(error => $"- {error.Message}"))}"
+            });
+        }
+
+        //private async ValueTask<Result<(int, int)>> CleanSingleRepositoryAsync(string webhookUrl, string account, string repository)
+        //{
+        //    // Try to get the repository from the GitHub API
+        //    _gitHubApiRoutes.GetRepositoryAsync()
+        //}
+        //
+        //private async ValueTask<Result<(int, int)>> CleanAllRepositoriesAsync(string webhookUrl, string account)
+        //{
+        //
+        //}
+    }
+}

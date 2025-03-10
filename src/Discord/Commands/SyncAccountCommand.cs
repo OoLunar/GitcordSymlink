@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using DSharpPlus.Commands;
@@ -16,12 +17,12 @@ namespace OoLunar.GitcordSymlink.Discord.Commands
         private static readonly DefaultReaction _starReaction = DefaultReaction.FromEmoji(DiscordEmoji.FromUnicode("⭐"));
 
         private readonly ILogger<SyncAccountCommand> _logger;
-        private readonly DatabaseManager _discordWebhookManager;
+        private readonly DatabaseManager _databaseManager;
 
         public SyncAccountCommand(ILogger<SyncAccountCommand> logger, DatabaseManager discordWebhookManager)
         {
             _logger = logger;
-            _discordWebhookManager = discordWebhookManager;
+            _databaseManager = discordWebhookManager;
         }
 
         [Command("sync_account"), Description("Syncs a GitHub account or organization with a Discord channel."), RequireGuild]
@@ -30,9 +31,22 @@ namespace OoLunar.GitcordSymlink.Discord.Commands
             // Create a new webhook for the channel.
             await context.DeferResponseAsync(true);
 
+            // Set the flags
+            GitcordSyncOptions syncOptions = GitcordSyncOptions.None;
+            syncOptions |= includePublicRepositories ? GitcordSyncOptions.Public : 0;
+            syncOptions |= includeArchivedRepositories ? GitcordSyncOptions.Archived : 0;
+            syncOptions |= includeForkedRepositories ? GitcordSyncOptions.Forked : 0;
+            syncOptions |= includePrivateRepositories ? GitcordSyncOptions.Private : 0;
+
             // TODO: Check to see if we already have a channel for this account.
             // If we do, we should ensure the webhook exists on the channel and
             // Iterate over the repositories again to ensure they all use the webhook.
+            GitcordAccount? account = await _databaseManager.GetAccountAsync(accountName);
+            if (account is not null)
+            {
+                await ResyncRepositories(account, syncOptions, channel);
+                return;
+            }
 
             // Create channel automatically if it doesn't exist.
             channel ??= await context.Guild!.CreateChannelAsync(
@@ -51,33 +65,36 @@ namespace OoLunar.GitcordSymlink.Discord.Commands
             // Create the webhook for GitHub to use.
             DiscordWebhook webhook = await CreateWebhookAsync(channel, accountName);
 
-            // Set the flags
-            GitcordSyncOptions syncOptions = GitcordSyncOptions.None;
-            if (includePublicRepositories)
-            {
-                syncOptions |= GitcordSyncOptions.Public;
-            }
-
-            if (includeArchivedRepositories)
-            {
-                syncOptions |= GitcordSyncOptions.Archived;
-            }
-
-            if (includeForkedRepositories)
-            {
-                syncOptions |= GitcordSyncOptions.Forked;
-            }
-
-            if (includePrivateRepositories)
-            {
-                syncOptions |= GitcordSyncOptions.Private;
-            }
-
             // Store the webhook URL in the database.
-            await _discordWebhookManager.CreateNewAccountAsync(accountName, channel.Id, syncOptions, $"{webhook.Url}/github");
+            await _databaseManager.CreateNewAccountAsync(accountName, channel.Id, syncOptions, $"{webhook.Url}/github");
 
             // Let the user sync the account with the webhook.
             await context.RespondAsync("Please give me permission to add webhooks to your repositories: https://github.com/apps/gitcord-symlink/installations/new");
+        }
+
+        private async ValueTask ResyncRepositories(GitcordAccount account, GitcordSyncOptions syncOptions, DiscordChannel? channel)
+        {
+            if (account.SyncOptions != syncOptions || (channel is not null && account.ChannelId != channel.Id))
+            {
+                account = new()
+                {
+                    Name = account.Name,
+                    SyncOptions = syncOptions,
+                    ChannelId = channel?.Id ?? account.ChannelId,
+                    WebhookUrl = account.WebhookUrl
+                };
+
+                // Update the sync options in the database.
+                if (!await _databaseManager.UpdateAccountAsync(account))
+                {
+                    _logger.LogError("Failed to update the sync options for the account {Account}.", account.Name);
+                    throw new InvalidOperationException("Failed to update the sync options for the account.");
+                }
+            }
+
+            // Get all repositories available for the account.
+            IReadOnlyDictionary<string, ulong> repositories = await _databaseManager.GetAllRepositoriesAsync(account.Name);
+
         }
 
         private async ValueTask<DiscordWebhook> CreateWebhookAsync(DiscordChannel channel, string accountName)
